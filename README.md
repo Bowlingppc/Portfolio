@@ -16,7 +16,7 @@ North Seattle College: Associate's degree, Business, 2021 - 2022
 
 
 ## Contacts
-- [LinkedIn](www.linkedin.com/in/phiphat-phattharachayasi)
+- LinkedIn: www.linkedin.com/in/phiphat-phattharachayasi
 - Email: chayasil.phiphat@gmail.com
 
 <!---
