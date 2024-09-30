@@ -1,1 +1,222 @@
+---
+title: "Seattle 2021-2023 Crime Rate Data Analysis"
+author: "Phiphat Chayasil"
+date: '2024-09-27'
+output: html_document
+---
+
+<style type="text/css">
+body{/* Normal */ font-size: 16px;}
+td {/* Table  */ font-size: 12px;}
+h1.title{font-size: 30px; color: Black;}
+h3.subtitle{font-size: 24px; color: Black;}
+h1 { /* Header 1 */ font-size: 28px; color: DarkBlue;}
+h2 { /* Header 2 */ font-size: 24px; color: DarkBlue;}
+h3 { /* Header 3 */ font-size: 20px; color: DarkBlue;}
+code.r{ /* Code block */ font-size: 14px;}
+pre{/* Code block - determines code spacing between lines */ font-size: 14px;}
+table {
+  font-family: arial, sans-serif;
+  border-collapse: collapse;
+  width: 80%;
+}
+th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+
+
+---
+
+# Statement of Purpose {-}
+
+Seattle, the biggest city in the Pacific Northwest, is very well known for its beauty. However, it can be noticed that the crime rate spikes up in the past couple of years. The purpose of this project is to examine and summarize the crime rate in Seattle from 2020 - 2023.
+
+# Objective {-}
+
+- Use data from Seattle Police Department database to examine the crime rate in Seattle from 2020 - 2023.
+- Demonstrate what neighborhood has the most crime rate for each year.
+- the tread of the crime rate and visualization.
+
+
+# Methods and Tools {-}
+The following R libraries and techniques will be employed:
+
+- tidyverse: Clean data
+- dplyr: Dataframe manipulation
+- lubridate: Work with date and time data.
+- ggplot2: Visualize crime rate trends.
+
+# Expected Outcome
+
+We expect to produce:
+
+- Clear visualizations of Seattle crime rate from 2021 - 2023 trends.
+- A demonstration of key R programming skills in data analysis and visualization.
+
+# Data Collection
+
+Seattle crime data can be downloaded at https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5/about_data. This provides us a csv file that contains the crime rate from 2008 to the current date.
+
+```{r}
+# Read the csv file and make it a dataframe
+crime_data = as.data.frame(read.csv('SPD_Crime_Data__2008-Present_20240926.csv'))
+str(crime_data)
+```
+
+# Data preparation {-}
+crime_data object has many columns and requires lots of clean-ups.
+
+```{R}
+# Make all the column names lower characters
+colnames(crime_data) = tolower(colnames(crime_data))
+
+# Select the columns that match our interest
+crime_data = crime_data %>% select(offense.start.datetime, report.number, offense.id, crime.against.category, offense.parent.group,
+                                   offense, mcpp)
+
+# Make offense.start.datetime a date object with yyyy-mm-dd format
+crime_data$offense.start.datetime = as.Date(crime_data$offense.start.datetime, 
+                                            format="%m/%d/%Y")
+
+# Select the crime data only between 2020 - 2023
+crime_data = crime_data[crime_data$offense.start.datetime >= '2020-01-01' &
+                          crime_data$offense.start.datetime <= '2023-12-31',]
+
+# Sort offense.start.datetime column in ascending order
+crime_data = crime_data[order(crime_data$offense.start.datetime),]
+
+# Filter out duplicated data if any
+crime_data = distinct(crime_data)
+```
+
+Now we have to ensure the values in each column does not contain null data. If there is a null data, we will replace it as "unknown".
+
+```{R}
+# Apply a function to all character element in the data set to find any values that indicate 'null'. Otherwise, return all character elements in a lower case without any white spaces
+crime_data[] = lapply(crime_data, function(x) {
+    if (is.character(x)) {
+      x = ifelse(x %in% c("", "<Null>", "Null", "NA", NA, "null"), 'unknown', trimws(tolower(x)))
+    } else {
+      return(x)  
+    }
+  })
+```
+
+When we look at all the unique values in crime.against.category column, we can see that one of the set is 'not_a_crime'
+```{R}
+# Return a vector of unique values in 'crime.against.category' column
+unique(crime_data$crime.against.category)
+```
+ The source of the data does not state as to what it actually means. It may mean that the case is not a crime after throughout investigation, false alarm, or a misunderstanding. As a result, we will exclude this from our data set.    
+ 
+```{R}
+# Select only the rows that 'crime.against.category' column that do not contain 'not_a_crime'
+crime_data = crime_data[crime_data$crime.against.category != 'not_a_crime',] 
+```
+
+We may double again to make sure that any rows with 'not a crime' are eliminated.
+
+```{R}
+# Return a vector of unique values in 'crime.against.category' column
+unique(crime_data$crime.against.category)
+```
+
+Next, we will begin to distinguish and categorize 'serious offense'. As per https://app.leg.wa.gov/rcw/default.aspx?cite=9.94A.030, we can categorize offense.parent.group as serious offense as follows:
+- sex offenses
+- driving under the influence
+- homicide offenses
+- drug/narcotic offenses
+- prostitution offenses
+- assault offenses
+- human trafficking
+
+
+```{R}
+
+
+```
+
+# Data Visualization
+Now we will make a visualizations on Microsoft and Stock prices.
+
+```{r}
+
+ggplot(data = prices_combined) + 
+  geom_line(mapping = aes(x = index(prices_combined) ,y = AAPL.Adjusted, color = "Apple")) + 
+  geom_line(mapping = aes(x = index(prices_combined) ,y = MSFT.Adjusted, color = "Microsoft")) +
+  labs(y= "Adjusted Closing Price", x = "Date", title = 'Microsoft and Apple Daily Adjusted Price') +
+  scale_color_manual(values = c("Apple" = "grey", "Microsoft" = "green")) + theme_minimal() 
+
+
+
+
+
+#  geom_smooth((mapping = aes(x = index(prices_combined) ,y = AAPL.Adjusted, color = "coral1")))
+
+#ggplot(data = aapl.prices) + geom_line(mapping = aes(x = index(aapl.prices) ,y = aapl.prices), color = 'grey') + 
+ # geom_line(mapping = aes(x = index(msft.prices) ,y = msft.prices), color = 'green') + labs(y= "Adjusted Closing Price", x = "Date", title = 'Microsoft and Apple Daily Adjusted Price') + scale_color_manual(name='',
+  #                   breaks=c('Linear', 'Cubic'),
+   #                  values=c('Cubic'='slategrey', 'Linear'='coral1')) + theme_minimal()
+
+
+```
+
+
+```{r}
+ggplot(data = prices_combined) + 
+  geom_line(mapping = aes(x = index(prices_combined) ,y = log(AAPL.Adjusted), color = "Apple")) + 
+  geom_line(mapping = aes(x = index(prices_combined) ,y = log(MSFT.Adjusted), color = "Microsoft")) +
+  labs(y= "Log Adjusted Closing Price", x = "Date", title = 'Microsoft and Apple Daily Log Adjusted Price') +
+  scale_color_manual(values = c("Apple" = "grey", "Microsoft" = "green")) + theme_minimal()
+
+
+
+```
+
+
+
+
+(msft_stat = cbind('mean' = mean(msft.prices), 'median' = median(msft.prices), 'stdv' = sd(msft.prices), 'min' = min(msft.prices), 'max' = max(msft.prices)))
+quantile(msft.prices)
+ggplot(data = msft.prices) + geom_line(mapping = aes(x = index(msft.prices) ,y = as.numeric(msft.prices)), color = 'green') + labs(y= "Adjusted Closing Price", x = "Date", title = 'Microsoft Daily Adjusted Price')
+
+ggplot(data = msft.prices) + geom_line(mapping = aes(x = index(msft.prices) ,y = as.numeric(log(msft.prices))), color = 'green') + labs(y= "Logarithm of Adjusted Closing Price", x = "Date", title = 'Logarithm of Microsoft Daily Adjusted Price') 
+```
+
+```{r}
+
+
+
+(aapl_stat = cbind('mean' = mean(aapl.prices), 'median' = median(aapl.prices), 'stdv' = sd(aapl.prices), 'min' = min(aapl.prices), 'max' = max(aapl.prices)))
+quantile(aapl.prices)
+
+
+ggplot(data = aapl.prices) + geom_line(mapping = aes(x = index(aapl.prices) ,y = as.numeric(aapl.prices)), color = 'grey') + labs(y= "Adjusted Closing Price", x = "Date", title = 'Apple Daily Adjusted Price')
+
+```
+
+
+```{r}
+ggplot(data = aapl.prices) + geom_line(mapping = aes(x = index(aapl.prices) ,y = aapl.prices), color = 'grey') + 
+  geom_line(mapping = aes(x = index(msft.prices) ,y = msft.prices), color = 'green')
+
+cor(aapl.prices, msft.prices)
+
+
+```
+
+
 
