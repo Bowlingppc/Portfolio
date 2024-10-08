@@ -1,0 +1,436 @@
+---
+title: "Seattle 2021-2023 Crime Rate Data Analysis"
+author: "Phiphat Chayasil"
+date: '2024-09-27'
+output: github_document
+---
+
+<style type="text/css">
+body{/* Normal */ font-size: 16px;}
+td {/* Table  */ font-size: 12px;}
+h1.title{font-size: 30px; color: Black;}
+h3.subtitle{font-size: 24px; color: Black;}
+h1 { /* Header 1 */ font-size: 28px; color: DarkBlue;}
+h2 { /* Header 2 */ font-size: 24px; color: DarkBlue;}
+h3 { /* Header 3 */ font-size: 20px; color: DarkBlue;}
+code.r{ /* Code block */ font-size: 14px;}
+pre{/* Code block - determines code spacing between lines */ font-size: 14px;}
+table {
+  font-family: arial, sans-serif;
+  border-collapse: collapse;
+  width: 80%;
+}
+th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+
+
+---
+
+# Statement of Purpose {-}
+
+Seattle, the biggest city in the Pacific Northwest, is very well known for its beauty. However, it can be noticed that the crime rate spikes up in the past couple of years. The purpose of this project is to examine and summarize the crime rate in Seattle from 2020 - 2023.
+
+# Objective {-}
+
+- Use data from Seattle Police Department database to examine the crime rate in Seattle from 2020 - 2023.
+- Demonstrate what neighborhood has the most crime rate for each year.
+- the tread of the crime rate and visualization.
+
+
+# Methods and Tools {-}
+The following R libraries and techniques will be employed:
+
+- tidyverse: Clean data
+- dplyr: Dataframe manipulation
+- lubridate: Work with date and time data.
+- ggplot2: Visualize crime rate trends.
+
+# Expected Outcome
+
+We expect to produce:
+
+- Clear visualizations of Seattle crime rate from 2020 - 2023 trends.
+- A demonstration of key R programming skills in data analysis and visualization.
+
+# Data Collection
+
+Seattle crime data can be downloaded at https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5/about_data. This provides us a csv file that contains the crime rate from 2008 to the current date.
+
+```{r}
+# Read the csv file and make it a dataframe
+crime_data <- as.data.frame(read.csv('SPD_Crime_Data__2008-Present_20240926.csv'))
+str(crime_data)
+```
+
+# Data preparation {-}
+crime_data object has many columns and requires lots of clean-ups.
+
+```{R}
+# Make all the column names lower characters
+colnames(crime_data) <- tolower(colnames(crime_data))
+
+# Select the columns that match our interest
+crime_data <- crime_data %>% select(offense.start.datetime, report.number, offense.id, crime.against.category, offense.parent.group,
+                                    offense, mcpp)
+
+# Make offense.start.datetime a date object with yyyy-mm-dd format
+crime_data$offense.start.datetime <- as.Date(crime_data$offense.start.datetime,
+                                             format="%m/%d/%Y")
+
+# Select the crime data only between 2020 - 2023
+crime_data <- crime_data[crime_data$offense.start.datetime >= '2020-01-01' &
+                           crime_data$offense.start.datetime <= '2023-12-31',]
+
+# Sort offense.start.datetime column in ascending order
+crime_data <- crime_data[order(crime_data$offense.start.datetime),]
+
+# Filter out duplicated data if any
+crime_data <- distinct(crime_data)
+```
+
+Now we have to ensure the values in each column does not contain null data. If there is a null data, we will replace it as "unknown".
+
+```{R}
+# Apply a function to all character element in the data set to find any values that indicate 'null'. Otherwise, return all character elements in a lower case without any white spaces
+crime_data[] <- lapply(crime_data, function(x) {
+  if (is.character(x)) {
+    x = ifelse(x %in% c("", "<Null>", "Null", "NA", NA, "null", 'null '), 'unknown', trimws(tolower(x)))
+  } else {
+    return(x)
+  }
+})
+```
+
+When we look at all the unique values in crime.against.category column, we can see that one of the set is 'not_a_crime'
+```{R}
+# Return a vector of unique values in 'crime.against.category' column
+unique(crime_data$crime.against.category)
+```
+The source of the data does not state as to what it actually means. It may mean that the case is not a crime after throughout investigation, false alarm, or a misunderstanding. As a result, we will exclude this from our data set.
+
+```{R}
+# Select only the rows that 'crime.against.category' column that do not contain 'not_a_crime'
+crime_data <- crime_data[crime_data$crime.against.category != 'not_a_crime',]
+```
+
+We may double again to make sure that any rows with 'not a crime' are eliminated.
+
+```{R}
+# Return a vector of unique values in 'crime.against.category' column
+unique(crime_data$crime.against.category)
+```
+
+Next, we will begin to distinguish and categorize 'serious offense'. As per https://app.leg.wa.gov/rcw/default.aspx?cite=9.94A.030, we can categorize offense.parent.group as serious offense as follows:
+
+- sex offenses
+
+- driving under the influence
+
+- homicide offenses
+
+- drug/narcotic offenses
+
+- prostitution offenses
+
+- assault offenses
+
+- human trafficking
+
+Another point to be noted is that 'offense' column must not be labelled as 'simple' or 'intimidation' to be considered a serious offense.
+```{R}
+# Vectorize all the serious offenses by assigning them into a variable
+serious_offenses <- c('sex offenses', 'driving under the influence', 'homicide offenses',
+                      'drug/narcotic offenses', 'prostitution offenses', 'assault offenses',
+                      'human trafficking')
+
+# Make a new column in crime_data with a condition that if it fits the condition to be considered 'serious offense', the value will be TRUE and FALSE otherwise
+crime_data <- crime_data %>%
+  mutate(serious_offenses = ifelse((offense.parent.group %in% serious_offenses) & !(offense %in% c('simple assault', 'intimidation')), 'yes', 'no'))
+
+# Extract a subset of crimes that are considered serious offenses
+crime_data_serious <- crime_data[crime_data$serious_offenses == 'yes',]
+```
+
+
+
+Lastly, we would like to make functions that can apply to each year in our dataset.
+```{r}
+transform_datetime <- function(data, format) {
+  if (format == 'weekly') {
+    data$offense.start.datetime <- wday(data$offense.start.datetime, label = TRUE, abbr = FALSE)
+  } else {
+    data$offense.start.datetime <- month(data$offense.start.datetime, label = TRUE, abbr = FALSE)
+  }
+  data <- data %>%
+          group_by(offense.start.datetime) %>%
+          summarise(total_crimes = n())
+  return (data)
+
+}
+```
+
+```{R}
+# Function to plot monthly crime totals for a specific year
+plot_datetime <- function(data, year, mean, serious_offense = FALSE) {
+
+  # Calculate the average crime per month
+  crime_avg <- nrow(data) / 12
+  # Turn data in offense.start.datetime column to month only
+  #data$offense.start.datetime <- month(data$offense.start.datetime, label = TRUE)
+
+
+  # Group data based on each month crimes occurred and summarize total number for each month
+  #data <- data %>%
+  #  group_by(offense.start.datetime) %>%
+  #  summarise(total_crimes = n())
+  # Plot the data based on many crimes committed each month
+  ggplot(data = data) + geom_col(aes(x = offense.start.datetime, y = total_crimes, fill = total_crimes)) +
+    geom_hline(yintercept = mean, linetype = "dashed", color = "red", linewidth = 0.5) +
+    geom_text(aes(x = offense.start.datetime, y = total_crimes, label = total_crimes), vjust = -0.5, size = 3) +
+    scale_fill_gradient(low = "lightblue", high = "darkblue") +
+    scale_y_continuous(limits = c(0, max(data$total_crimes) + 500)) +
+    #labs(title = ifelse(serious_offense,
+    #                    paste("Serious Offense per Month in", year),
+    #                    paste("Crimes per Month in", year)),
+    #                    x = "Month", y = "Number of Crimes") +
+    #annotate("text", x = Inf, y = Inf, label = ifelse(serious_offense,
+    #                                                  paste("Average Monthly Serious Ofeense Count:", round(mean)),
+    #                                                  paste("Average Monthly Crime Count:", round(mean))),
+    #                                                  color = 'red', hjust = 1.05, vjust = 1.05) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    theme(legend.position = "none")
+}
+```
+
+
+
+
+
+
+```{r}
+# Function to provide simple statistics of crimes occurred
+data_summary <- function(data, year) {
+  total_crimes <- nrow(data)
+  # Filter all the crimes in 'crime_data' for those that occurred in 2020 only.
+  crime_year <- crime_data %>%
+          filter(year(offense.start.datetime) == year)
+  var_name <- paste0("crime_", year)
+  assign(var_name, crime_year, envir = .GlobalEnv)
+
+  # Filter even more for crimes occurred in 2020 that are considered serious
+  serious_year <- crime_year %>%
+          filter(serious_offenses == 'yes')
+  var_name <- paste0("serious_", year)
+  assign(var_name, serious_year, envir = .GlobalEnv)
+
+
+  num_days <- ifelse(year == 2020, 366, 365)
+  mean_daily_crimes <- total_crimes/num_days
+  mean_weekly_crimes <- total_crimes/52
+  mean_monthly_crimes <- total_crimes/12
+
+  to_weekly <- transform_datetime(crime_year, 'weekly')
+  weekly_max <- to_weekly[which.max(to_weekly$total_crimes), ]
+  weekly_min <- to_weekly[which.min(to_weekly$total_crimes), ]
+  to_monthly <- transform_datetime(crime_year, 'monthly')
+  monthly_max <- to_monthly[which.max(to_monthly$total_crimes), ]
+  monthly_min <- to_monthly[which.min(to_monthly$total_crimes), ]
+
+  cat(paste("Summary Statistics for Year:", year, "\n"))
+  cat(paste("Total Crimes:", total_crimes, "\n"))
+  cat(paste("Total Serious Offenses:", nrow(serious_year), "\n"))
+  cat(paste("Average Daily Crimes:", ceiling(mean_daily_crimes), "\n"))
+  cat(paste("Average Weekly Crimes:", ceiling(mean_weekly_crimes), "\n"))
+  cat(paste("Average Monthly Crimes:", ceiling(mean_monthly_crimes), "\n"))
+  cat(paste("Highest Day:", weekly_max$offense.start.datetime, "with", weekly_max$total_crimes, "crimes\n"))
+  cat(paste("Lowest Day:", weekly_min$offense.start.datetime, "with", weekly_min$total_crimes, "crimes\n"))
+  cat(paste("Highest Month:", monthly_max$offense.start.datetime, "with", monthly_max$total_crimes, "crimes\n"))
+  cat(paste("Lowest onth:", monthly_min$offense.start.datetime, "with", monthly_min$total_crimes, "crimes\n"))
+
+
+  print(plot_datetime(to_weekly, year, mean(to_weekly$total_crimes), FALSE))
+
+
+  print(plot_datetime(to_monthly, year, mean(to_monthly$total_crimes), FALSE))
+}
+
+```
+
+# Crime Data Insights: A Statistical Breakdown and Visualization
+
+## 2020 Seattle Crime Data
+
+```{R}
+
+data_summary(crime_data, 2020)
+#plot_monthly(crime_2020, 2020)
+#plot_monthly(serious_2020, 2020, TRUE)
+```
+
+
+
+
+Now we would like to see the trend of crimes occurred in 2020.
+
+
+
+The spike in crime in Seattle in May 2020 could be associated with the death of George Floyd as a result of police brutality. This event prompted widespread protests and unrest, which may have contributed to the increase in reported crimes during that month.
+
+
+
+
+
+
+```{R}
+crime_summary_2020 <- crime_2020 %>%
+  group_by(offense.parent.group) %>%
+  summarise(total_crimes = n()) %>%
+  arrange((total_crimes)) %>%
+  tail(n = 10)
+
+ggplot(data = crime_summary_2020) + geom_col(aes(x = offense.parent.group, y = total_crimes, fill = offense.parent.group)) + coord_flip() + scale_x_discrete(limits = crime_summary_2020$offense.parent.group) + theme(legend.position = "none") +
+  labs(title = "Total 10 Crimes by Offense Category in 2020",
+       x = "Offense Category",
+       y = "Number of Crimes")
+
+```
+
+
+```{R}
+crime_summary_2020 <- crime_2020 %>%
+  group_by(offense) %>%
+  summarise(total_crimes = n()) %>%
+  arrange((total_crimes)) %>%
+  tail(n = 10 )
+
+ggplot(data = crime_summary_2020) + geom_col(aes(x = offense, y = total_crimes, fill = offense)) + coord_flip() + scale_x_discrete(limits = crime_summary_2020$offense) + theme(legend.position = "none") +
+  labs(title = "Total Crimes by Offense Category in 2021",
+       x = "Offense Category",
+       y = "Number of Crimes")
+
+```
+
+
+
+
+First, we want to look at how many crimes committed in Seattle between 2021-2023 in total.
+```{R}
+# Total number of record
+nrow(crime_data)
+nrow(crime_data_serious)
+```
+It appears that there are `r nrow(crime_data)` crimes committed which `r nrow(crime_data_serious)` crimes are serious offenses.
+
+## 2021 Seattle Crime Data
+
+```{R}
+# Filter all the crimes in 'crime_data' for those that occurred in 2021 only.
+crime_data_2021 <- crime_data %>%
+  filter(year(offense.start.datetime) == 2021)
+
+# Filter even more for crimes occurred in 2020 that are considered serious
+crime_data_serious_2021 <- crime_data_2021 %>%
+  filter(serious_offenses == 'yes')
+
+# The total number of crimes in 2021
+nrow(crime_data_2021)
+
+# The total number of serious crimes in 2021
+nrow(crime_data_serious_2021)
+```
+
+
+```{R}
+# Test Code
+#
+crime_avg <- nrow(crime_data_2021) / 12
+by_month_2021 <- crime_data_2021
+by_month_2021$offense.start.datetime <- month(by_month_2021$offense.start.datetime, label = TRUE)
+by_month_2021 <- by_month_2021 %>%
+  group_by(offense.start.datetime) %>%
+  summarise(total_crimes = n())
+ggplot(data = by_month_2021) + geom_col(aes(x = offense.start.datetime, y = total_crimes, fill = total_crimes)) + theme(legend.position = "none") + scale_fill_gradient(low = "lightblue", high = "darkblue") + geom_hline(yintercept = crime_avg, linetype = "dashed", color = "red") + labs(title = "Crimes per Month in 2021", x = "Month", y = "Number of Crimes") +
+  annotate("text", x = Inf, y = Inf, label = paste("Average Monthly Crime Count:", round(crime_avg)))
+```
+
+## 2022 Seattle Crime Data
+
+```{R}
+# Filter all the crimes in 'crime_data' for those that occurred in 2022 only.
+crime_data_2022 <- crime_data %>%
+  filter(year(offense.start.datetime) == 2022)
+
+# Filter even more for crimes occurred in 2020 that are considered serious
+crime_data_serious_2022 <- crime_data_2022 %>%
+  filter(serious_offenses == 'yes')
+
+# The total number of crimes in 2021
+nrow(crime_data_2022)
+
+# The total number of serious crimes in 2021
+nrow(crime_data_serious_2022)
+```
+
+
+```{R}
+# Test Code
+#
+crime_avg <- nrow(crime_data_2022) / 12
+by_month_2022 <- crime_data_2022
+by_month_2022$offense.start.datetime <- month(by_month_2022$offense.start.datetime, label = TRUE)
+by_month_2022 <- by_month_2022 %>%
+  group_by(offense.start.datetime) %>%
+  summarise(total_crimes = n())
+ggplot(data = by_month_2022) + geom_col(aes(x = offense.start.datetime, y = total_crimes, fill = total_crimes)) + theme(legend.position = "none") + scale_fill_gradient(low = "lightblue", high = "darkblue") + geom_hline(yintercept = crime_avg, linetype = "dashed", color = "red") + labs(title = "Crimes per Month in 2022", x = "Month", y = "Number of Crimes") +
+  annotate("text", x = 8, y = crime_avg + 500, label = paste("Average Monthly Crime Count:", round(crime_avg)))
+```
+
+
+## 2023 Seattle Crime Data
+
+```{R}
+# Filter all the crimes in 'crime_data' for those that occurred in 2020 only.
+crime_data_2023 <- crime_data %>%
+  filter(year(offense.start.datetime) == 2023)
+
+# Filter even more for crimes occurred in 2020 that are considered serious
+crime_data_serious_2023 <- crime_data_2023 %>%
+  filter(serious_offenses == 'yes')
+
+# The total number of crimes in 2021
+nrow(crime_data_2023)
+
+# The total number of serious crimes in 2021
+nrow(crime_data_serious_2023)
+```
+
+
+```{R}
+# Test Code
+#
+crime_avg <- nrow(crime_data_2023) / 12
+by_month_2023 <- crime_data_2023
+by_month_2023$offense.start.datetime <- month(by_month_2023$offense.start.datetime, label = TRUE)
+by_month_2023 <- by_month_2023 %>%
+  group_by(offense.start.datetime) %>%
+  summarise(total_crimes = n())
+ggplot(data = by_month_2023) + geom_col(aes(x = offense.start.datetime, y = total_crimes, fill = total_crimes)) + theme(legend.position = "none") + scale_fill_gradient(low = "lightblue", high = "darkblue") + geom_hline(yintercept = crime_avg, linetype = "dashed", color = "red") + labs(title = "Crimes per Month in 2023", x = "Month", y = "Number of Crimes") +
+  annotate("text", x = 4, y = crime_avg + 500, label = paste("Average Monthly Crime Count:", round(crime_avg)))
+```
+
+
+## Comparative Analysis of Seattle Crime Trends: 2020-2023
