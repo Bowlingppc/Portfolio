@@ -1,0 +1,174 @@
+---
+title: "Kickstarter Project Analysis"
+author: "Phiphat Chayasil"
+format:
+  html:
+     embed-resources: true
+editor: visual
+---
+
+# Background
+
+<https://www.kickstarter.com> Links to an external site. is a crowdfunding site, where people make a pitch for a project and an amount they need to raise to do the project. Then users can pledge support, and if users pledge enough support for a project, then the project gets the pledged money. If users do not pledge enough support, then the users keep their money and the project gets no money. The dataset comes from <https://www.kaggle.com/datasets/kemical/kickstarter-projects?select=ks-projects-201801.csv>.
+
+# Loading Libraries
+
+```{r}
+#| warning: false
+# Load all the necessary libraries 
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(scales)
+```
+
+# Loading Data
+
+As previously stated, the data can be downloaded from <https://www.kaggle.com/datasets/kemical/kickstarter-projects?select=ks-projects-201801.csv>.
+
+```{r}
+ks_data <- read.csv('ks-projects-201801.csv')
+
+# Example of our dataset
+glimpse(ks_data)
+```
+
+# Data Processing
+
+```{r}
+
+# add 4 new columns with deadline and launch dates and years
+ks_data <- ks_data |>
+  mutate(
+    deadline_date = as.Date(deadline),
+    launched_date = as.Date(launched),
+    deadline_year = format(deadline_date, '%Y'),
+    launched_year = format(launched_date, '%Y')
+  )
+
+# See what the dataset now looks like
+glimpse(ks_data)
+
+```
+
+# Initial Calculations
+
+```{r}
+# Display how many projects there are 
+total_projects <- nrow(ks_data)
+
+# Filter out the successful projects
+success_ones <- ks_data |>
+  filter(state == 'successful')
+
+# Filter out the failed projects
+failed_ones <- ks_data |>
+  filter(state == 'failed')
+
+# the ratio of failed projects
+success_ratio <- nrow(success_ones)/total_projects
+fail_ratio <- nrow(failed_ones)/total_projects
+```
+
+As per our initial calculations, there are `r total_projects` projects in total. `r nrow(success_ones)` are marked successful, and `r nrow(failed_ones)` are marked failed. The ratios of successful and failed projects are `r round(success_ratio, 2)` and `r round(fail_ratio, 2)` respectively.
+
+
+# Biggest Non-Success
+
+Now we are interested in finding the biggest non-success project. This is to find the project that is marked anything other than "successful" with the highest "usd_pledged_real" value.
+
+```{R}
+# Filter out the row with the most 'usd_pledged_real' with state as anything but 'successful'
+biggest_nonsuccess <- ks_data |>
+  filter(state != 'successful') |>
+  filter(usd_pledged_real == max(usd_pledged_real))
+```
+
+The biggest non-success project is `r biggest_nonsuccess$name`.
+
+### The Skarp Laser Razor: 21st Century Shaving
+
+Found by Morgan Gustavasson and Paul Binun, the project was proposed by Skarp Technologies, Inc. in 2025 to raise funding for the 'Skarp Laser Razor' developement. The company claimed that its razor blades was superior as it could cut hair in a cellular level which would cause zero irritation. The razor was expected to be powered only a AAA battery, and the razor blade would be disposable and replaceable. According to our data, the project raised over 4 million dollars before it got suspended by Kickstart, due to not having a working prototype. 
+
+# Project State
+
+Now we would like to visualize how many projects have each state.
+
+```{r}
+#| warning: false
+# Group the data by state column and summarize how many there are for each state
+project_state <- ks_data |>
+  group_by(state) |>
+  summarize(state_count = n())
+# Plot a bar chart with respect state counts in ascending order
+state_plot <- project_state |>
+  ggplot() + 
+  geom_col(aes(x = reorder(state, +state_count), 
+               y = state_count, 
+               fill = state,
+               text = state)) + 
+  labs('Kickstart Projects Count', x = 'state', y = 'state counts') +
+  scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) 
+
+# Make the plot and interractive one
+ggplotly(state_plot, tooltip = 'text')
+```
+
+Based on the visualization, it appears that there are more failed projects than successful ones. However, the difference is not significant, compared to the total count of all the projects combined. The bars for live and suspended projects also are almost identical in height. Even though cancelled projects are much taller, but it is still far significant from successful and failed bars. We may conclude that it is not easy for a project to be cancelled, and it is even more unlikely for a project to be suspended.
+
+# Yearly Summary
+
+Ultimately, we would like to summarize out data in each year. We will be using deadline_year column in this section. The successful rate will also be determined by projects with successful state versus other projects with otherwise states.
+
+```{r}
+# Group the data by deadline_year and make new columns by using summarize()
+yearly_summary <- ks_data |>
+  group_by(deadline_year) |>
+  summarize(project_count = n(), 
+            percent_success = mean(state == 'successful'),
+            avg_fund_raise = mean(usd_pledged_real),
+            max_fund_raise = max(usd_pledged_real))
+print(yearly_summary)
+```
+
+In this section, the deadline_year was selected in the dataset as it indicates when each project would end. It is more intuititive as some projects may have a long active duration. Moreover, we may categorize the states as binomial; the state is either success or not, and that how we can determine the success rate for each year. In the dataset, there are two more columns that help identify the mean and the max of fund raise in that particular year. This is useful as it shows how projects in each year got attentions for funding.
+
+```{r}
+#| warning: false
+# Plot a bar chart with deadline_year on x-axis and project counts on y-axis
+project_count <- yearly_summary |>
+  ggplot() + 
+  geom_col(aes(x = deadline_year, 
+               y = project_count, 
+               fill = project_count,
+               text = project_count)) + 
+  labs('Projects Count Yearly Summary', x = 'Year', y = 'Project counts') +
+  scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) 
+ggplotly(project_count, tooltip = 'text')
+```
+With the visualization, it can be observed that the distribution of project counts is close to normal distribution, but a little skewed-left. This means that, between 2009-2018, there were more projects toward the end of duration rather than the beginning. It can be seen that the project counts peaked at about 2015 before it dropped down dramastically in 2018.
+
+```{r}
+#| warning: false
+# Plot a bar chart with deadline_year on x-axis and project counts on y-axis
+max_fund_raise <- yearly_summary |>
+  ggplot(aes(x = as.numeric(deadline_year), 
+               y = max_fund_raise)) + 
+  geom_line(color = 'blue') +
+  geom_point() +
+  labs('Kickstart Maximum Fund Raise', x = 'Year', y = 'Maximum Fund Raise') +
+  scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) 
+ggplotly(max_fund_raise)
+```
+The line graph compliments the previous bar chart as, not only the total project counts, it also shows that the maximum fund raise peaked in 2015 with a project that could raised over 20 million dollars, and then dropped down significantly in 2018.
+
+# Unusual data values
+Another interesting about observation about our data is that some projects can have very small values of 'usd_goal_real'. 
+```{r}
+unusual <- ks_data |>
+  filter(usd_goal_real < 1)
+head(unusual)
+```
+
+It can be seen that there were many projects that were asking for less than $1. As the amount of fund is way too low to be realistic, it can be assumed that some projects might have incorrect data. Another possible cause could be that some projects were raising funds for more symbolic purposes. A question that can be passed on to the creator in regards to this unusual if it could be a case that some projects were created to raise more awareness rather than raising funds, and if it is possible to recognize and add an indicator into the dataset.
